@@ -18,6 +18,7 @@
 
 import { onceDefined } from "@shared/onceDefined";
 import electron, { app, BrowserWindowConstructorOptions, Menu } from "electron";
+import net from "net";
 import { dirname, join } from "path";
 
 import { RendererSettings } from "./settings";
@@ -25,6 +26,147 @@ import { patchTrayMenu } from "./trayMenu";
 import { IS_VANILLA } from "./utils/constants";
 
 console.log("[Equicord] Starting up...");
+
+const RPC_WSS_PORT_START = 6463;
+const RPC_WSS_PORT_END = 6472;
+
+function isDiscordRpcWebSocketModule(request: string, parentFilename?: string) {
+    return request === "./RPCWebSocket" && !!parentFilename && /[\\/]discord_rpc[\\/]index\.js$/.test(parentFilename);
+}
+
+function isDiscordRpcModule(request: string, parentFilename?: string, loaded?: any) {
+    const ref = `${parentFilename ?? ""}\n${request}`.replaceAll("\\", "/");
+
+    return ref.includes("/discord_rpc/")
+        || ref.endsWith("/discord_rpc")
+        || (loaded?.RPCWebSocket?.http?.createServer != null && loaded?.RPCIPC != null);
+}
+
+function getRequestedPort(args: unknown[]) {
+    return typeof args[0] === "number" ? args[0] : null;
+}
+
+function getRequestedHost(args: unknown[]) {
+    return typeof args[1] === "string" ? args[1] : undefined;
+}
+
+async function canListenOnPort(port: number, host?: string) {
+    const probe = net.createServer();
+
+    return await new Promise<boolean>(resolve => {
+        const cleanup = () => probe.removeAllListeners();
+
+        probe.once("error", () => {
+            cleanup();
+            resolve(false);
+        });
+
+        probe.once("listening", () => {
+            cleanup();
+            probe.close(() => resolve(true));
+        });
+
+        probe.listen(port, host);
+    });
+}
+
+async function findAvailableDiscordRpcPort(startPort: number, host?: string) {
+    for (let port = startPort; port <= RPC_WSS_PORT_END; port++) {
+        if (await canListenOnPort(port, host)) {
+            return port;
+        }
+    }
+
+    return startPort;
+}
+
+function patchDiscordRpcWebSocketListen(mod: any) {
+    if (mod?.http?.createServer == null || mod.__equicordRpcWssPatched) {
+        return mod;
+    }
+
+    const originalCreateServer = mod.http.createServer;
+
+    mod.http.createServer = function (...createServerArgs: any[]) {
+        const server = originalCreateServer.apply(this, createServerArgs);
+        const originalListen = server?.listen;
+
+        if (typeof originalListen !== "function" || server.__equicordRpcWssListenPatched) {
+            return server;
+        }
+
+        Object.defineProperty(server, "__equicordRpcWssListenPatched", {
+            configurable: true,
+            enumerable: false,
+            value: true,
+        });
+
+        server.listen = function (...listenArgs: any[]) {
+            const requestedPort = getRequestedPort(listenArgs);
+
+            if (requestedPort == null || requestedPort < RPC_WSS_PORT_START || requestedPort > RPC_WSS_PORT_END) {
+                return originalListen.apply(this, listenArgs);
+            }
+
+            const host = getRequestedHost(listenArgs);
+
+            void findAvailableDiscordRpcPort(requestedPort, host)
+                .then(port => {
+                    if (port !== requestedPort) {
+                        console.warn(`[Equicord] discord_rpc websocket port ${requestedPort} is busy, using ${port} instead.`);
+                    }
+
+                    originalListen.apply(this, [port, ...listenArgs.slice(1)]);
+                })
+                .catch(error => {
+                    console.warn("[Equicord] Failed to probe discord_rpc websocket ports, falling back to Discord default listen.", error);
+                    originalListen.apply(this, listenArgs);
+                });
+
+            return this;
+        };
+
+        return server;
+    };
+
+    Object.defineProperty(mod, "__equicordRpcWssPatched", {
+        configurable: true,
+        enumerable: false,
+        value: true,
+    });
+
+    return mod;
+}
+
+function patchDiscordRpcModule(mod: any) {
+    if (mod?.RPCWebSocket?.http?.createServer != null) {
+        patchDiscordRpcWebSocketListen(mod.RPCWebSocket);
+    } else {
+        patchDiscordRpcWebSocketListen(mod);
+    }
+
+    return mod;
+}
+
+const Module = require("module") as {
+    _load(request: string, parent: NodeModule | undefined, isMain: boolean): unknown;
+};
+const originalModuleLoad = Module._load;
+Module._load = function (request: string, parent: NodeModule | undefined, isMain: boolean) {
+    const loaded = originalModuleLoad.apply(this, arguments as any);
+
+    if (typeof request === "string" && isDiscordRpcModule(request, parent?.filename, loaded)) {
+        const patched = patchDiscordRpcModule(loaded);
+
+        if (isDiscordRpcWebSocketModule(request, parent?.filename) || loaded?.RPCWebSocket != null) {
+            console.log("[Equicord] Patched Discord RPC websocket transport to avoid localhost port conflicts.");
+        }
+
+        return patched;
+    }
+
+    return loaded;
+};
 
 // Our injector file at app/index.js
 const injectorPath = require.main!.filename;
