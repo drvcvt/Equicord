@@ -1,0 +1,226 @@
+.vc-pm-modal {
+    min-width: 860px;
+    color: var(--text-normal);
+}
+
+.vc-pm-modal h1,
+.vc-pm-modal h2,
+.vc-pm-modal h3 {
+    color: var(--header-primary);
+}
+
+.vc-pm-toolbar {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    padding: 8px 16px;
+    border-bottom: 1px solid var(--background-modifier-accent);
+    color: var(--text-normal);
+}
+
+.vc-pm-toolbar label {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    color: var(--text-normal);
+}
+
+.vc-pm-search {
+    flex: 1;
+    padding: 6px 10px;
+    background: var(--input-background);
+    color: var(--text-normal);
+    border: 1px solid transparent;
+    border-radius: 4px;
+    outline: none;
+}
+
+.vc-pm-search::placeholder {
+    color: var(--text-muted);
+}
+
+.vc-pm-search:focus {
+    border-color: var(--brand-500);
+}
+
+.vc-pm-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    color: var(--text-normal);
+}
+
+.vc-pm-table th,
+.vc-pm-table td {
+    text-align: left;
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--background-modifier-accent);
+    color: var(--text-normal);
+}
+
+.vc-pm-table th {
+    position: sticky;
+    top: 0;
+    background: var(--background-secondary);
+    cursor: pointer;
+    user-select: none;
+    color: var(--header-secondary);
+    font-weight: 600;
+    z-index: 1;
+}
+
+.vc-pm-table th.vc-pm-sorted::after {
+    content: " " attr(data-dir);
+    opacity: 0.6;
+}
+
+.vc-pm-row {
+    cursor: pointer;
+}
+
+.vc-pm-row:hover {
+    background: var(--background-modifier-hover);
+}
+
+.vc-pm-row-expanded {
+    background: var(--background-modifier-selected);
+}
+
+.vc-pm-plugin-name {
+    color: var(--interactive-active);
+    font-weight: 500;
+}
+
+.vc-pm-plugin-name-off {
+    opacity: 0.55;
+}
+
+.vc-pm-badge {
+    display: inline-block;
+    font-size: 10px;
+    padding: 1px 5px;
+    margin-left: 6px;
+    background: var(--background-tertiary);
+    border-radius: 3px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+}
+
+.vc-pm-chevron {
+    display: inline-block;
+    width: 10px;
+    color: var(--text-muted);
+    margin-right: 4px;
+    transition: transform 0.15s;
+}
+
+.vc-pm-chevron-open {
+    transform: rotate(90deg);
+}
+
+.vc-pm-num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-normal);
+}
+
+.vc-pm-heat-low { color: var(--text-muted); }
+.vc-pm-heat-med { color: var(--status-warning); }
+.vc-pm-heat-high { color: var(--status-danger); font-weight: 600; }
+
+.vc-pm-bar {
+    display: inline-block;
+    height: 4px;
+    background: var(--brand-500);
+    border-radius: 2px;
+    vertical-align: middle;
+    margin-left: 6px;
+    min-width: 2px;
+    max-width: 80px;
+}
+
+.vc-pm-detail {
+    background: var(--background-tertiary);
+    padding: 10px 14px;
+    font-size: 12px;
+    color: var(--text-normal);
+}
+
+.vc-pm-detail-grid {
+    display: grid;
+    grid-template-columns: minmax(160px, 240px) 1fr;
+    gap: 4px 16px;
+    margin-bottom: 8px;
+}
+
+.vc-pm-detail-label {
+    color: var(--text-muted);
+    font-weight: 500;
+}
+
+.vc-pm-detail-section {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid var(--background-modifier-accent);
+}
+
+.vc-pm-detail-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 4px;
+    font-size: 11.5px;
+}
+
+.vc-pm-detail-table td {
+    padding: 3px 8px;
+    border-bottom: 1px dashed var(--background-modifier-accent);
+    color: var(--text-normal);
+}
+
+.vc-pm-detail-table td:first-child {
+    font-family: var(--font-code);
+    color: var(--text-muted);
+    max-width: 360px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.vc-pm-empty {
+    padding: 24px;
+    text-align: center;
+    color: var(--text-muted);
+}
+
+.vc-pm-footer-info {
+    font-size: 11px;
+    color: var(--text-muted);
+    padding: 6px 16px;
+    border-top: 1px solid var(--background-modifier-accent);
+}
+
+.vc-pm-kbd {
+    display: inline-block;
+    padding: 1px 6px;
+    background: var(--background-tertiary);
+    border: 1px solid var(--background-modifier-accent);
+    border-radius: 3px;
+    font-family: var(--font-code);
+    font-size: 11px;
+    color: var(--text-normal);
+}
+
+.vc-pm-recorder {
+    padding: 4px 10px;
+    background: var(--input-background);
+    color: var(--text-normal);
+    border: 1px solid transparent;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.vc-pm-recorder.vc-pm-recording {
+    border-color: var(--status-danger);
+    color: var(--status-danger);
+}
