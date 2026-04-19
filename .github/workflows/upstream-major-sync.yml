@@ -1,0 +1,220 @@
+name: Sync Upstream Major Release
+
+on:
+    workflow_dispatch:
+        inputs:
+            target_branch:
+                description: "Branch to merge upstream changes into"
+                type: choice
+                options:
+                    - main
+                    - dev
+                default: main
+            dry_run:
+                description: "Dry run: only check for new major version, do not create PRs"
+                type: boolean
+                default: false
+    schedule:
+        # Runs on the first day of every month at 06:00 UTC
+        - cron: "0 6 1 * *"
+
+permissions:
+    contents: write
+    pull-requests: write
+
+env:
+    UPSTREAM_REPO: Equicord/Equicord
+
+jobs:
+    sync:
+        name: Sync Upstream Major Release
+        runs-on: ubuntu-latest
+
+        steps:
+            - name: Checkout fork
+              uses: actions/checkout@v4
+              with:
+                  fetch-depth: 0
+                  token: ${{ secrets.GITHUB_TOKEN }}
+
+            - name: Configure Git
+              run: |
+                  git config user.name "github-actions[bot]"
+                  git config user.email "github-actions[bot]@users.noreply.github.com"
+
+            - name: Add upstream remote and fetch tags
+              run: |
+                  git remote add upstream https://github.com/${{ env.UPSTREAM_REPO }}.git
+                  git fetch upstream --tags --no-recurse-submodules
+
+            - name: Find latest upstream major release
+              id: upstream
+              run: |
+                  # Find the highest version tag from upstream (format: vX.Y[.Z[.W...]])
+                  latest_tag=$(git tag --list 'v*' --sort=-v:refname \
+                    | grep -E '^v[0-9]+\.[0-9]+(\.[0-9]+)*$' \
+                    | head -n 1)
+
+                  if [ -z "$latest_tag" ]; then
+                    echo "No upstream version tags found."
+                    exit 1
+                  fi
+
+                  latest_version="${latest_tag#v}"
+                  latest_major=$(echo "$latest_version" | cut -d. -f1)
+
+                  echo "tag=$latest_tag" >> $GITHUB_OUTPUT
+                  echo "version=$latest_version" >> $GITHUB_OUTPUT
+                  echo "major=$latest_major" >> $GITHUB_OUTPUT
+                  echo "Latest upstream tag: $latest_tag (major version: $latest_major)"
+
+            - name: Find last synced major version
+              id: synced
+              run: |
+                  # Tracking tags are stored as upstream-synced/major-X in this fork
+                  last_synced_tag=$(git tag --list 'upstream-synced/major-*' --sort=-v:refname | head -n 1)
+
+                  if [ -z "$last_synced_tag" ]; then
+                    last_major=0
+                  else
+                    last_major="${last_synced_tag#upstream-synced/major-}"
+                  fi
+
+                  echo "last_major=$last_major" >> $GITHUB_OUTPUT
+                  echo "Last synced major version: $last_major"
+
+            - name: Check if a new major version is available
+              id: check
+              run: |
+                  upstream_major="${{ steps.upstream.outputs.major }}"
+                  last_major="${{ steps.synced.outputs.last_major }}"
+
+                  if [ "$upstream_major" -gt "$last_major" ]; then
+                    echo "new_major=true" >> $GITHUB_OUTPUT
+                    echo "New major version available: v$upstream_major (last synced: v$last_major)"
+                  else
+                    echo "new_major=false" >> $GITHUB_OUTPUT
+                    echo "Already up to date. Upstream major: $upstream_major, last synced major: $last_major"
+                  fi
+
+            - name: Exit cleanly if already up to date
+              if: steps.check.outputs.new_major == 'false'
+              run: |
+                  echo "Fork is already up to date with upstream major version ${{ steps.synced.outputs.last_major }}."
+                  echo "Upstream latest tag: ${{ steps.upstream.outputs.tag }}"
+
+            - name: Dry run report
+              if: steps.check.outputs.new_major == 'true' && github.event.inputs.dry_run == 'true'
+              run: |
+                  TARGET="${{ github.event.inputs.target_branch || 'main' }}"
+                  echo "Dry run: upstream ${{ steps.upstream.outputs.tag }} (major ${{ steps.upstream.outputs.major }}) would be synced into '$TARGET'."
+                  echo "No PR or branch was created."
+
+            - name: Create sync branch and attempt merge
+              if: steps.check.outputs.new_major == 'true' && github.event.inputs.dry_run != 'true'
+              id: merge
+              run: |
+                  TARGET="${{ github.event.inputs.target_branch || 'main' }}"
+                  UPSTREAM_TAG="${{ steps.upstream.outputs.tag }}"
+                  SYNC_BRANCH="upstream-sync/$UPSTREAM_TAG"
+
+                  echo "target=$TARGET" >> $GITHUB_OUTPUT
+                  echo "sync_branch=$SYNC_BRANCH" >> $GITHUB_OUTPUT
+
+                  git checkout "$TARGET"
+                  git checkout -b "$SYNC_BRANCH"
+
+                  if git merge "refs/tags/$UPSTREAM_TAG" -m "chore: sync upstream $UPSTREAM_TAG into $TARGET"; then
+                    echo "conflict=false" >> $GITHUB_OUTPUT
+                    echo "Merge completed without conflicts."
+                  else
+                    echo "conflict=true" >> $GITHUB_OUTPUT
+                    echo "Merge conflicts detected. Aborting clean merge."
+                    git merge --abort || true
+                  fi
+
+            - name: Push sync branch (no conflicts)
+              if: >
+                  steps.check.outputs.new_major == 'true' &&
+                  github.event.inputs.dry_run != 'true' &&
+                  steps.merge.outputs.conflict == 'false'
+              run: |
+                  git push origin "${{ steps.merge.outputs.sync_branch }}" --force
+
+            - name: Create PR (no conflicts)
+              if: >
+                  steps.check.outputs.new_major == 'true' &&
+                  github.event.inputs.dry_run != 'true' &&
+                  steps.merge.outputs.conflict == 'false'
+              env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              run: |
+                  TARGET="${{ steps.merge.outputs.target }}"
+                  TAG="${{ steps.upstream.outputs.tag }}"
+                  BRANCH="${{ steps.merge.outputs.sync_branch }}"
+
+                  gh pr create \
+                    --base "$TARGET" \
+                    --head "$BRANCH" \
+                    --title "chore: sync upstream $TAG" \
+                    --body "Automated sync of upstream major release **$TAG** from \`${{ env.UPSTREAM_REPO }}\` into \`$TARGET\`.
+
+No merge conflicts were detected. Please review the changes before merging." \
+                    || echo "PR already exists or could not be created, continuing."
+
+            - name: Update tracking tag (no conflicts)
+              if: >
+                  steps.check.outputs.new_major == 'true' &&
+                  github.event.inputs.dry_run != 'true' &&
+                  steps.merge.outputs.conflict == 'false'
+              run: |
+                  MAJOR="${{ steps.upstream.outputs.major }}"
+                  TRACKING_TAG="upstream-synced/major-$MAJOR"
+
+                  git tag -f "$TRACKING_TAG"
+                  git push origin "$TRACKING_TAG" --force
+                  echo "Tracking tag '$TRACKING_TAG' updated."
+
+            - name: Push upstream tip branch for manual conflict resolution
+              if: >
+                  steps.check.outputs.new_major == 'true' &&
+                  github.event.inputs.dry_run != 'true' &&
+                  steps.merge.outputs.conflict == 'true'
+              run: |
+                  UPSTREAM_TAG="${{ steps.upstream.outputs.tag }}"
+                  SYNC_BRANCH="${{ steps.merge.outputs.sync_branch }}"
+
+                  # Create a branch at the upstream tag commit so GitHub can show the diff
+                  git checkout -B "$SYNC_BRANCH" "refs/tags/$UPSTREAM_TAG"
+                  git push origin "$SYNC_BRANCH" --force
+
+            - name: Create draft PR (conflicts)
+              if: >
+                  steps.check.outputs.new_major == 'true' &&
+                  github.event.inputs.dry_run != 'true' &&
+                  steps.merge.outputs.conflict == 'true'
+              env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              run: |
+                  TARGET="${{ steps.merge.outputs.target }}"
+                  TAG="${{ steps.upstream.outputs.tag }}"
+                  BRANCH="${{ steps.merge.outputs.sync_branch }}"
+
+                  gh pr create \
+                    --base "$TARGET" \
+                    --head "$BRANCH" \
+                    --title "chore: sync upstream $TAG (conflicts need resolution)" \
+                    --body "Automated sync of upstream major release **$TAG** from \`${{ env.UPSTREAM_REPO }}\` into \`$TARGET\`.
+
+⚠️ **Merge conflicts were detected.** This PR was created as a draft. Please resolve all conflicts manually before merging." \
+                    --draft \
+                    || echo "Draft PR already exists or could not be created, continuing."
+
+            - name: Fail on merge conflicts
+              if: >
+                  steps.check.outputs.new_major == 'true' &&
+                  github.event.inputs.dry_run != 'true' &&
+                  steps.merge.outputs.conflict == 'true'
+              run: |
+                  echo "::error::Upstream ${{ steps.upstream.outputs.tag }} has merge conflicts with '${{ steps.merge.outputs.target }}'. A draft PR has been created for manual resolution."
+                  exit 1
