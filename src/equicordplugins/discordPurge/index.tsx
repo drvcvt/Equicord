@@ -106,10 +106,26 @@ const PurgeIcon: IconComponent = ({ width = 20, height = 20 }) => (
 );
 
 function SetupModal({ modalProps, onReady }: { modalProps: ModalProps; onReady: () => void; }) {
-    const [phase, setPhase] = useState<"idle" | "downloading" | "installing" | "waiting" | "error">("idle");
+    const [phase, setPhase] = useState<"idle" | "downloading" | "installing" | "waiting" | "pinging" | "error">("idle");
     const [errMsg, setErrMsg] = useState("");
+    const [progress, setProgress] = useState(0);
+
+    async function pollDaemon(maxSeconds = 30): Promise<boolean> {
+        const steps = maxSeconds * 2; // 500ms intervals
+        for (let i = 0; i < steps; i++) {
+            setProgress(Math.round((i / steps) * 100));
+            await new Promise(r => setTimeout(r, 500));
+            if (await pingDaemon(800)) {
+                setProgress(100);
+                return true;
+            }
+        }
+        return false;
+    }
 
     async function autoInstall() {
+        setErrMsg("");
+        setProgress(0);
         if (!Native) {
             setErrMsg("Auto-install requires Discord desktop. Use the manual link below.");
             setPhase("error");
@@ -118,31 +134,44 @@ function SetupModal({ modalProps, onReady }: { modalProps: ModalProps; onReady: 
         setPhase("downloading");
         const dl = await Native.downloadSetup();
         if (!dl.ok || !dl.path) {
-            setErrMsg(dl.error ?? "download failed");
+            setErrMsg(`Download failed: ${dl.error ?? "unknown"}. Make sure a release exists at ${RELEASES_URL}.`);
             setPhase("error");
             return;
         }
         setPhase("installing");
         const run = await Native.runSilentInstaller(dl.path);
         if (!run.ok) {
-            setErrMsg(run.error ?? `installer exited ${run.code}`);
+            setErrMsg(`Installer failed: ${run.error ?? `exit code ${run.code}`}`);
             setPhase("error");
             return;
         }
         setPhase("waiting");
-        // NSIS kicks the daemon off at end of install, give it a moment.
-        for (let i = 0; i < 15; i++) {
-            await new Promise(r => setTimeout(r, 500));
-            if (await pingDaemon()) {
-                showNotification({ title: "discord-purge", body: "Daemon installed and running." });
-                modalProps.onClose();
-                onReady();
-                return;
-            }
+        // NSIS silent install + VBS-launched daemon: takes a few seconds to be reachable.
+        if (await pollDaemon(30)) {
+            showNotification({ title: "discord-purge", body: "Daemon installed and running." });
+            modalProps.onClose();
+            onReady();
+            return;
         }
-        setErrMsg("Installed, but the daemon isn't responding. Try restarting Discord or Windows.");
+        setErrMsg("Installer completed but daemon isn't responding after 30s. Use 'Retry ping' below, or reboot.");
         setPhase("error");
     }
+
+    async function retryPing() {
+        setErrMsg("");
+        setProgress(0);
+        setPhase("pinging");
+        if (await pollDaemon(15)) {
+            showNotification({ title: "discord-purge", body: "Daemon detected." });
+            modalProps.onClose();
+            onReady();
+            return;
+        }
+        setErrMsg("Still no response. Try rebooting, or run '%LOCALAPPDATA%\\discord-purge\\daemon.vbs' manually.");
+        setPhase("error");
+    }
+
+    const busy = phase === "downloading" || phase === "installing" || phase === "waiting" || phase === "pinging";
 
     return (
         <ModalRoot {...modalProps} size={ModalSize.SMALL}>
@@ -159,7 +188,16 @@ function SetupModal({ modalProps, onReady }: { modalProps: ModalProps; onReady: 
 
                 {phase === "downloading" && <Forms.FormText style={{ marginTop: 12, opacity: 0.7 }}>Downloading installer…</Forms.FormText>}
                 {phase === "installing" && <Forms.FormText style={{ marginTop: 12, opacity: 0.7 }}>Running silent install…</Forms.FormText>}
-                {phase === "waiting" && <Forms.FormText style={{ marginTop: 12, opacity: 0.7 }}>Waiting for daemon to come online…</Forms.FormText>}
+                {phase === "waiting" && (
+                    <Forms.FormText style={{ marginTop: 12, opacity: 0.7 }}>
+                        Waiting for daemon to come online… {progress}%
+                    </Forms.FormText>
+                )}
+                {phase === "pinging" && (
+                    <Forms.FormText style={{ marginTop: 12, opacity: 0.7 }}>
+                        Pinging daemon… {progress}%
+                    </Forms.FormText>
+                )}
                 {phase === "error" && (
                     <Forms.FormText style={{ marginTop: 12, color: "var(--text-danger)" }}>
                         {errMsg}
@@ -167,13 +205,14 @@ function SetupModal({ modalProps, onReady }: { modalProps: ModalProps; onReady: 
                 )}
             </ModalContent>
             <ModalFooter>
-                <Button
-                    color={Button.Colors.BRAND}
-                    onClick={autoInstall}
-                    disabled={phase === "downloading" || phase === "installing" || phase === "waiting"}
-                >
-                    {phase === "idle" || phase === "error" ? "Install automatically" : "Working…"}
+                <Button color={Button.Colors.BRAND} onClick={autoInstall} disabled={busy}>
+                    {busy ? "Working…" : phase === "error" ? "Retry install" : "Install automatically"}
                 </Button>
+                {phase === "error" && (
+                    <Button color={Button.Colors.PRIMARY} onClick={retryPing} disabled={busy}>
+                        Retry ping
+                    </Button>
+                )}
                 <Button
                     look={Button.Looks.LINK}
                     color={Button.Colors.PRIMARY}
@@ -185,6 +224,7 @@ function SetupModal({ modalProps, onReady }: { modalProps: ModalProps; onReady: 
                     look={Button.Looks.LINK}
                     color={Button.Colors.PRIMARY}
                     onClick={modalProps.onClose}
+                    disabled={busy}
                 >
                     Dismiss
                 </Button>

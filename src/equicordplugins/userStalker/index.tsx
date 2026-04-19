@@ -43,6 +43,7 @@ import {
 } from "./types";
 
 const logger = new Logger("UserStalker", "#ff69b4");
+const PLUGIN_VERSION = "2026-04-19-02"; // bump to verify clients are on the latest build
 
 interface VoiceStateEntry {
     guildId?: string;
@@ -486,6 +487,7 @@ export default definePlugin({
 
     async start() {
         pluginBootTs = Date.now();
+        logger.info(`UserStalker v${PLUGIN_VERSION} starting (run "VencordNative && Vencord.Plugins.plugins.UserStalker" in console to verify)`);
         setOnTrackAddedHook(userId => reconcileVoiceStateFor(userId));
         await initStore(settings.store.dataDir);
         reconcileAllTracked();

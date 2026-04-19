@@ -164,8 +164,24 @@ export function NowWidget({ onSelectUser }: { onSelectUser: (id: string) => void
     return (
         <div className="vc-stalker-now">
             <div className="vc-stalker-now-header">
-                <div className="vc-stalker-now-title">Right now</div>
-                <div className="vc-stalker-now-subtitle">Live snapshot of all tracked users</div>
+                <div
+                    className="vc-stalker-now-title"
+                    style={{
+                        // inline fallback colors + sizing so the title always shows
+                        // even if the plugin stylesheet didn't load yet or a theme
+                        // overrides the var.
+                        fontSize: 13,
+                        fontWeight: 700,
+                        letterSpacing: "1.2px",
+                        textTransform: "uppercase",
+                        color: "var(--header-primary, #fff)"
+                    }}
+                >
+                    Right now
+                </div>
+                <div className="vc-stalker-now-subtitle" style={{ fontSize: 11, color: "var(--text-muted, #a3a6aa)" }}>
+                    Live snapshot of all tracked users
+                </div>
             </div>
 
             <div className="vc-stalker-now-tiles">
