@@ -135,9 +135,10 @@ export function PillDragHandle({ event }: { event: IslandEvent; }) {
 
 // === Reply pill (textarea + send + image paste) ============================
 
-export function ReplyPill({ event, initialFiles, onSent, onCancel }: {
+export function ReplyPill({ event, initialFiles, active = true, onSent, onCancel }: {
     event: IslandEvent;
     initialFiles?: File[];
+    active?: boolean;
     onSent: () => void;
     onCancel: () => void;
 }) {
@@ -232,7 +233,7 @@ export function ReplyPill({ event, initialFiles, onSent, onCancel }: {
     return (
         <div
             ref={pillRef}
-            className={"di-reply-pill" + (mounted ? " di-reply-active" : "")}
+            className={"di-reply-pill" + (mounted && active ? " di-reply-active" : "")}
             onMouseDown={e => e.stopPropagation()}
         >
             {previews.length > 0 && (

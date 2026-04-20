@@ -511,31 +511,14 @@ img.di-icon { background: transparent; }
     border-radius: 14px;
 }
 
-/* === Marquee ============================================================== */
+/* === Static ellipsized text =============================================== */
 
 .di-marquee {
     overflow: hidden;
     min-width: 0;
     display: block;
-    position: relative;
-}
-.di-marquee-inner {
-    display: inline-block;
     white-space: nowrap;
-    will-change: transform;
-}
-.di-marquee.di-marquee-active {
-    mask-image: linear-gradient(90deg, transparent 0, #000 8%, #000 92%, transparent 100%);
-    -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 8%, #000 92%, transparent 100%);
-}
-.di-marquee.di-marquee-active .di-marquee-inner {
-    padding-left: 100%;
-    animation: di-marquee 10s linear infinite;
-}
-
-@keyframes di-marquee {
-    from { transform: translateX(0); }
-    to { transform: translateX(-100%); }
+    text-overflow: ellipsis;
 }
 
 /* === Waveform ============================================================ */
@@ -701,14 +684,19 @@ img.di-icon { background: transparent; }
         0 12px 40px rgba(0, 0, 0, 0.65),
         0 0 0 1px rgba(255, 255, 255, 0.06) inset;
     overflow: hidden;
-    animation: di-popout-in 180ms var(--di-ease-bounce);
     transform-origin: top center;
     color: #fff;
+    opacity: 0;
+    transform: translateY(-6px) scale(0.95);
+    transition:
+        opacity 180ms var(--di-ease),
+        transform 180ms var(--di-ease-bounce);
+    will-change: transform, opacity;
 }
 
-@keyframes di-popout-in {
-    from { opacity: 0; transform: translateY(-6px) scale(0.95); }
-    to { opacity: 1; transform: translateY(0) scale(1); }
+.di-popout.di-popout-active {
+    opacity: 1;
+    transform: translateY(0) scale(1);
 }
 
 .di-popout-banner { height: 50px; width: 100%; }
@@ -940,13 +928,17 @@ img.di-icon { background: transparent; }
     flex-direction: column;
     gap: 1px;
     z-index: 9001;
-    animation: di-ctx-in 120ms ease-out;
     transform-origin: top left;
+    opacity: 0;
+    transform: scale(0.95);
+    transition:
+        opacity 140ms var(--di-ease),
+        transform 140ms var(--di-ease-bounce);
 }
 
-@keyframes di-ctx-in {
-    from { opacity: 0; transform: scale(0.95); }
-    to { opacity: 1; transform: scale(1); }
+.di-ctx.di-ctx-active {
+    opacity: 1;
+    transform: scale(1);
 }
 
 .di-ctx-item {

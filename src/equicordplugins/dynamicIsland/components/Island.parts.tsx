@@ -151,6 +151,27 @@ export function useAnimatedSegments(segments: SegmentData[], exitMs = 260): Trac
     return list;
 }
 
+/**
+ * Keeps rendering content for `ms` after `show` flips to false so CSS exit
+ * transitions can play. `active` flips immediately on show change (so class
+ * toggles drive enter/leave transitions); `mounted` drops only after the delay.
+ */
+export function useLinger(show: boolean, ms = 240): { mounted: boolean; active: boolean; } {
+    const [mounted, setMounted] = React.useState(show);
+    const [active, setActive] = React.useState(show);
+    React.useEffect(() => {
+        if (show) {
+            setMounted(true);
+            const r = requestAnimationFrame(() => setActive(true));
+            return () => cancelAnimationFrame(r);
+        }
+        setActive(false);
+        const t = setTimeout(() => setMounted(false), ms);
+        return () => clearTimeout(t);
+    }, [show, ms]);
+    return { mounted, active };
+}
+
 /** Detects whether a child of the given ref is overflowing its parent, and returns a boolean. */
 export function useOverflow(ref: React.RefObject<HTMLElement>, deps: any[]) {
     const [overflow, setOverflow] = React.useState(false);
@@ -245,27 +266,10 @@ export function DiscordDot() {
     );
 }
 
-// === Marquee (auto-detects overflow) =======================================
+// === Ellipsized text (kept name for API compat) ============================
 
 export function Marquee({ children, className }: { children: React.ReactNode; className?: string; }) {
-    const innerRef = React.useRef<HTMLSpanElement>(null);
-    const outerRef = React.useRef<HTMLSpanElement>(null);
-    const [active, setActive] = React.useState(false);
-    React.useEffect(() => {
-        const inner = innerRef.current, outer = outerRef.current;
-        if (!inner || !outer) return;
-        const check = () => setActive(inner.scrollWidth > outer.clientWidth + 1);
-        check();
-        const ro = new ResizeObserver(check);
-        ro.observe(outer);
-        ro.observe(inner);
-        return () => ro.disconnect();
-    }, [children]);
-    return (
-        <span ref={outerRef} className={"di-marquee " + (className ?? "") + (active ? " di-marquee-active" : "")}>
-            <span ref={innerRef} className="di-marquee-inner">{children}</span>
-        </span>
-    );
+    return <span className={"di-marquee " + (className ?? "")}>{children}</span>;
 }
 
 // === Waveform ==============================================================
@@ -344,7 +348,7 @@ export function Avatar({ event, onPopoutChange, size = "md" }: {
 
 // === Avatar long-hover popout ==============================================
 
-export function AvatarPopout({ event, onClose }: { event: IslandEvent; onClose: () => void; }) {
+export function AvatarPopout({ event, onClose, active = true }: { event: IslandEvent; onClose: () => void; active?: boolean; }) {
     const ref = React.useRef<HTMLDivElement | null>(null);
     React.useEffect(() => {
         const handler = (e: MouseEvent) => {
@@ -383,7 +387,7 @@ export function AvatarPopout({ event, onClose }: { event: IslandEvent; onClose: 
     const dotColor = STATUS_COLORS[status] ?? STATUS_COLORS.offline;
 
     return (
-        <div ref={ref} className="di-popout" onMouseDown={e => e.stopPropagation()}>
+        <div ref={ref} className={"di-popout" + (active ? " di-popout-active" : "")} onMouseDown={e => e.stopPropagation()}>
             <div className="di-popout-banner" style={{ background: event.accent }} />
             <div className="di-popout-avatar-wrap">
                 <img className="di-popout-avatar" src={event.avatarUrl} alt="" />
@@ -432,11 +436,12 @@ export interface CtxItem {
     danger?: boolean;
 }
 
-export function ContextMenu({ x, y, items, onClose }: {
+export function ContextMenu({ x, y, items, onClose, active = true }: {
     x: number;
     y: number;
     items: CtxItem[];
     onClose: () => void;
+    active?: boolean;
 }) {
     const ref = React.useRef<HTMLDivElement | null>(null);
     React.useEffect(() => {
@@ -452,7 +457,7 @@ export function ContextMenu({ x, y, items, onClose }: {
     return (
         <div
             ref={ref}
-            className="di-ctx"
+            className={"di-ctx" + (active ? " di-ctx-active" : "")}
             style={{ left: x, top: y }}
             onMouseDown={e => e.stopPropagation()}
         >

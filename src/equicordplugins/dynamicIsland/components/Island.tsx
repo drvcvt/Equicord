@@ -26,7 +26,8 @@ import {
     SegmentData,
     TrackedSegment,
     useAnimatedSegments,
-    useIslandState
+    useIslandState,
+    useLinger
 } from "./Island.parts";
 import { ReplyPill } from "./Island.reply";
 import {
@@ -131,8 +132,22 @@ function Surface({
         return null;
     };
 
-    const expandNode = expandedSeg ? renderExpand(expandedSeg) : null;
-    const expandOpen = !!expandNode;
+    // Keep the last expanded segment rendered during the collapse animation so
+    // the inner content (voice buttons, body text) fades with the container
+    // instead of vanishing the instant the mouse leaves.
+    const [lingerSeg, setLingerSeg] = React.useState<TrackedSegment | null>(null);
+    React.useEffect(() => {
+        if (expandedSeg) {
+            setLingerSeg(expandedSeg);
+            return;
+        }
+        const t = setTimeout(() => setLingerSeg(null), 260);
+        return () => clearTimeout(t);
+    }, [expandedSeg?.data.id]);
+
+    const contentSeg = expandedSeg ?? lingerSeg;
+    const expandNode = contentSeg ? renderExpand(contentSeg) : null;
+    const expandOpen = !!expandedSeg && !!renderExpand(expandedSeg);
 
     const surfaceClass = [
         "di-surface",
@@ -153,10 +168,13 @@ function Surface({
                         (t.status === "out" ? " di-segment-leaving" : " di-segment-entering") +
                         (t.data.type === "voice_call" || t.data.type === "stream" ? " di-segment-wrap-left" : "") +
                         (t.data.type === "transient" ? " di-segment-wrap-right" : "");
+                    const wrapStyle: React.CSSProperties = t.data.type === "idle"
+                        ? {}
+                        : { width: `${t.data.compactWidth}px` };
                     return (
                         <React.Fragment key={t.data.id}>
                             {prevActive && t.status !== "out" && <div className="di-divider" />}
-                            <div className={cls}>
+                            <div className={cls} style={wrapStyle}>
                                 {renderSegment(t, transientProps, () => onExpandedChange(t.data.id))}
                             </div>
                         </React.Fragment>
@@ -310,7 +328,7 @@ export function Island() {
         if (cur) dismiss(cur.id);
     }, []);
 
-    const buildCtxItems = (e: IslandEvent): CtxItem[] => {
+    const buildCtxItems = React.useCallback((e: IslandEvent): CtxItem[] => {
         const items: CtxItem[] = [];
         if (e.channelId) {
             items.push({
@@ -338,7 +356,7 @@ export function Island() {
         }
         items.push({ label: "Dismiss", onClick: () => dismiss(e.id) });
         return items;
-    };
+    }, [ackChannel]);
 
     const transientProps: TransientHandlers | null = React.useMemo(() => active ? {
         all,
@@ -361,6 +379,15 @@ export function Island() {
         handleDragOver, handleDragLeave, handleDrop, handleDismissActive, ackChannel
     ]);
 
+    const popoutVisible = !!(active && showPopout && active.userId);
+    const popout = useLinger(popoutVisible, 180);
+    const replyVisible = !!(active && replying && active.replyTarget);
+    const reply = useLinger(replyVisible, 220);
+    const ctxVisible = !!(active && ctxMenu);
+    const ctx = useLinger(ctxVisible, 160);
+
+    const ctxItems = React.useMemo(() => active ? buildCtxItems(active) : [], [active, buildCtxItems]);
+
     return (
         <div className="di-root" style={cssVars}>
             <Surface
@@ -369,22 +396,28 @@ export function Island() {
                 expandedId={expandedId}
                 onExpandedChange={setExpandedId}
             />
-            {active && showPopout && active.userId && (
-                <AvatarPopout event={active} onClose={() => setShowPopout(false)} />
+            {popout.mounted && active && active.userId && (
+                <AvatarPopout
+                    event={active}
+                    active={popout.active}
+                    onClose={() => setShowPopout(false)}
+                />
             )}
-            {active && replying && active.replyTarget && (
+            {reply.mounted && active && active.replyTarget && (
                 <ReplyPill
                     event={active}
+                    active={reply.active}
                     initialFiles={pendingFiles ?? undefined}
                     onSent={() => { setPendingFiles(null); sentReply(); }}
                     onCancel={() => { setPendingFiles(null); cancelReply(); }}
                 />
             )}
-            {active && ctxMenu && (
+            {ctx.mounted && active && ctxMenu && (
                 <ContextMenu
                     x={ctxMenu.x}
                     y={ctxMenu.y}
-                    items={buildCtxItems(active)}
+                    active={ctx.active}
+                    items={ctxItems}
                     onClose={() => setCtxMenu(null)}
                 />
             )}
