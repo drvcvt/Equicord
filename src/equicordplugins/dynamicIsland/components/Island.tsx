@@ -32,6 +32,7 @@ import {
 import { ReplyPill } from "./Island.reply";
 import {
     DraftSegment,
+    IdlePanel,
     IdleSegment,
     StreamSegment,
     TransientExpandContent,
@@ -60,10 +61,11 @@ export interface TransientHandlers {
 function renderSegment(
     t: TrackedSegment,
     transientProps: TransientHandlers | null,
-    onMouseEnter: () => void
+    onMouseEnter: () => void,
+    onIdleClick?: () => void
 ): React.ReactNode {
     const d = t.data;
-    if (d.type === "idle") return <IdleSegment />;
+    if (d.type === "idle") return <IdleSegment onClick={onIdleClick} />;
     if (!d.event) return null;
 
     switch (d.type) {
@@ -101,12 +103,14 @@ function Surface({
     tracked,
     transientProps,
     expandedId,
-    onExpandedChange
+    onExpandedChange,
+    onIdleClick
 }: {
     tracked: TrackedSegment[];
     transientProps: TransientHandlers | null;
     expandedId: string | null;
     onExpandedChange: (id: string | null) => void;
+    onIdleClick: () => void;
 }) {
     const width = computeWidth(tracked);
     const active = tracked.filter(t => t.status !== "out");
@@ -175,7 +179,7 @@ function Surface({
                         <React.Fragment key={t.data.id}>
                             {prevActive && t.status !== "out" && <div className="di-divider" />}
                             <div className={cls} style={wrapStyle}>
-                                {renderSegment(t, transientProps, () => onExpandedChange(t.data.id))}
+                                {renderSegment(t, transientProps, () => onExpandedChange(t.data.id), onIdleClick)}
                             </div>
                         </React.Fragment>
                     );
@@ -196,6 +200,7 @@ export function Island() {
     const [replying, setReplying] = React.useState(false);
     const [ctxMenu, setCtxMenu] = React.useState<{ x: number; y: number; } | null>(null);
     const [showPopout, setShowPopout] = React.useState(false);
+    const [showIdlePanel, setShowIdlePanel] = React.useState(false);
     const [pendingFiles, setPendingFiles] = React.useState<File[] | null>(null);
     const [dropTarget, setDropTarget] = React.useState(false);
     const lastIdRef = React.useRef<string | null>(null);
@@ -385,6 +390,15 @@ export function Island() {
     const reply = useLinger(replyVisible, 220);
     const ctxVisible = !!(active && ctxMenu);
     const ctx = useLinger(ctxVisible, 160);
+    const idlePanel = useLinger(showIdlePanel, 200);
+
+    const toggleIdlePanel = React.useCallback(() => setShowIdlePanel(s => !s), []);
+
+    // Close the idle panel if the island is no longer idle (a segment appeared).
+    const isIdle = segments.length === 1 && segments[0].type === "idle";
+    React.useEffect(() => {
+        if (!isIdle && showIdlePanel) setShowIdlePanel(false);
+    }, [isIdle, showIdlePanel]);
 
     const ctxItems = React.useMemo(() => active ? buildCtxItems(active) : [], [active, buildCtxItems]);
 
@@ -395,7 +409,14 @@ export function Island() {
                 transientProps={transientProps}
                 expandedId={expandedId}
                 onExpandedChange={setExpandedId}
+                onIdleClick={toggleIdlePanel}
             />
+            {idlePanel.mounted && (
+                <IdlePanel
+                    active={idlePanel.active}
+                    onClose={() => setShowIdlePanel(false)}
+                />
+            )}
             {popout.mounted && active && active.userId && (
                 <AvatarPopout
                     event={active}

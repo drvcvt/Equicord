@@ -9,11 +9,16 @@ import { findByCodeLazy } from "@webpack";
 import {
     ApplicationStreamingStore,
     ChannelActions,
+    ChannelStore,
     FluxDispatcher,
+    GuildStore,
     MediaEngineStore,
+    NavigationRouter,
     React,
     useStateFromStores,
-    VoiceActions
+    UserStore,
+    VoiceActions,
+    VoiceStateStore
 } from "@webpack/common";
 
 import { dismiss } from "../store";
@@ -41,12 +46,139 @@ const fmtTime = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toString().padS
 
 // === Idle segment ==========================================================
 
-export function IdleSegment() {
+export function IdleSegment({ onClick }: { onClick?: () => void; }) {
     return (
-        <div className="di-segment di-segment-idle" aria-hidden>
+        <div
+            className="di-segment di-segment-idle"
+            onClick={e => { e.stopPropagation(); onClick?.(); }}
+            role={onClick ? "button" : undefined}
+        >
             <div className="di-idle-dot">
                 <DiscordDot />
             </div>
+        </div>
+    );
+}
+
+// === Active voice call panel (rendered when idle dot clicked) =============
+
+interface ActiveCall {
+    channelId: string;
+    guildId: string | null;
+    userIds: string[];
+}
+
+function useActiveCalls(): ActiveCall[] {
+    return useStateFromStores([VoiceStateStore], () => {
+        let me: string | undefined;
+        try { me = UserStore.getCurrentUser()?.id; } catch { /* */ }
+        const byChannel = new Map<string, ActiveCall>();
+        const all = (VoiceStateStore as any).getAllVoiceStates?.() ?? {};
+        // Shape varies across Discord versions — handle both flat { userId -> state }
+        // and nested { guildId -> { userId -> state } }.
+        const consider = (userId: string, state: any) => {
+            if (!state || typeof state !== "object") return;
+            const channelId: string | undefined = state.channelId;
+            if (!channelId) return;
+            if (userId === me) return;
+            let entry = byChannel.get(channelId);
+            if (!entry) {
+                entry = { channelId, guildId: state.guildId ?? null, userIds: [] };
+                byChannel.set(channelId, entry);
+            }
+            if (!entry.userIds.includes(userId)) entry.userIds.push(userId);
+        };
+        for (const k of Object.keys(all)) {
+            const v = all[k];
+            if (v && typeof v === "object" && typeof v.channelId !== "undefined") {
+                consider(k, v);
+            } else if (v && typeof v === "object") {
+                for (const uid of Object.keys(v)) consider(uid, v[uid]);
+            }
+        }
+        return [...byChannel.values()]
+            .filter(c => c.userIds.length > 0)
+            .sort((a, b) => b.userIds.length - a.userIds.length)
+            .slice(0, 8);
+    });
+}
+
+function CallRow({ call, onJoin }: { call: ActiveCall; onJoin: () => void; }) {
+    const ch = ChannelStore.getChannel(call.channelId);
+    const guild = call.guildId ? GuildStore.getGuild(call.guildId) : null;
+    const name = ch?.name ? `#${ch.name}` : (ch?.type === 3 ? (ch.name || "Group DM") : "Voice");
+    const sub = guild?.name ?? (ch?.type === 1 ? "DM" : ch?.type === 3 ? "Group" : "Voice");
+    const shown = call.userIds.slice(0, 4);
+    const overflow = Math.max(0, call.userIds.length - shown.length);
+
+    return (
+        <button className="di-idle-call" onClick={onJoin} title={`Join ${name}`}>
+            <div className="di-idle-call-text">
+                <span className="di-idle-call-name">{name}</span>
+                <span className="di-idle-call-sub">{sub}</span>
+            </div>
+            <div className="di-idle-call-avatars">
+                {shown.map(uid => {
+                    const u = UserStore.getUser(uid) as any;
+                    const url = u?.getAvatarURL?.(undefined, 32, false);
+                    const letter = (u?.username?.[0] ?? "?").toUpperCase();
+                    const title = u?.globalName || u?.global_name || u?.username || uid;
+                    return url
+                        ? <img key={uid} className="di-idle-call-avatar" src={url} alt="" title={title} />
+                        : <div key={uid} className="di-idle-call-avatar di-idle-call-avatar-fallback" title={title}>{letter}</div>;
+                })}
+                {overflow > 0 && <div className="di-idle-call-avatar di-idle-call-avatar-more">+{overflow}</div>}
+            </div>
+            <span className="di-idle-call-join">Join</span>
+        </button>
+    );
+}
+
+export function IdlePanel({ active, onClose }: { active: boolean; onClose: () => void; }) {
+    const ref = React.useRef<HTMLDivElement | null>(null);
+    const calls = useActiveCalls();
+
+    React.useEffect(() => {
+        const handler = (e: MouseEvent) => {
+            const path = e.composedPath();
+            if (path.some(n => n === ref.current)) return;
+            // Don't close on clicks on the idle dot itself — that is the toggle
+            if (path.some(n => (n as HTMLElement)?.classList?.contains?.("di-segment-idle"))) return;
+            onClose();
+        };
+        document.addEventListener("mousedown", handler, { capture: true });
+        return () => document.removeEventListener("mousedown", handler, { capture: true });
+    }, [onClose]);
+
+    const join = (call: ActiveCall) => {
+        try {
+            if (call.guildId) {
+                ChannelActions.selectVoiceChannel(call.channelId);
+            } else {
+                // DM / group call → navigate and then join
+                NavigationRouter.transitionTo(`/channels/@me/${call.channelId}`);
+                ChannelActions.selectVoiceChannel(call.channelId);
+            }
+        } catch (e) {
+            logger.error("join voice failed", e);
+        }
+        onClose();
+    };
+
+    return (
+        <div
+            ref={ref}
+            className={"di-idle-panel" + (active ? " di-idle-panel-active" : "")}
+            onMouseDown={e => e.stopPropagation()}
+        >
+            <div className="di-idle-panel-header">Active calls</div>
+            {calls.length === 0 ? (
+                <div className="di-idle-panel-empty">No one in a voice channel</div>
+            ) : (
+                <div className="di-idle-panel-list">
+                    {calls.map(c => <CallRow key={c.channelId} call={c} onJoin={() => join(c)} />)}
+                </div>
+            )}
         </div>
     );
 }
