@@ -201,59 +201,70 @@ export function Island() {
     );
     const tracked = useAnimatedSegments(segments);
 
-    const cssVars: React.CSSProperties = {
+    // Keep latest `active` in a ref so stable handlers can read it without retriggering re-renders.
+    const activeRef = React.useRef(active);
+    activeRef.current = active;
+
+    const cssVars = React.useMemo<React.CSSProperties>(() => ({
         // @ts-expect-error css custom props
         "--di-top": `${settings.store.topOffset}px`,
         "--di-accent": active?.accent ?? "#5865f2"
-    };
+    }), [active?.accent, settings.store.topOffset]);
 
-    const handleClick = (e: React.MouseEvent) => {
-        if (!active) return;
+    const handleClick = React.useCallback((e: React.MouseEvent) => {
+        const cur = activeRef.current;
+        if (!cur) return;
         if ((e.target as HTMLElement).closest(".di-close, .di-ack, .di-avatar, .di-grab")) return;
-        if (active.onClick) {
-            active.onClick();
-            dismiss(active.id);
+        if (cur.onClick) {
+            cur.onClick();
+            dismiss(cur.id);
         }
-    };
+    }, []);
 
-    const handleMouseDown = (e: React.MouseEvent) => {
-        if (!active) return;
+    const handleMouseDown = React.useCallback((e: React.MouseEvent) => {
+        const cur = activeRef.current;
+        if (!cur) return;
         if (e.button !== 1) return;
-        if (!active.replyTarget) return;
+        if (!cur.replyTarget) return;
         e.preventDefault();
         e.stopPropagation();
-        pauseDismiss(active.id);
+        pauseDismiss(cur.id);
         setReplying(true);
-    };
+    }, []);
 
-    const handleDragOver = (e: React.DragEvent) => {
-        if (!active?.replyTarget) return;
+    const handleDragOver = React.useCallback((e: React.DragEvent) => {
+        const cur = activeRef.current;
+        if (!cur?.replyTarget) return;
         const items = e.dataTransfer?.items;
         if (!items) return;
         const hasImage = Array.from(items).some(it => it.kind === "file" && it.type.startsWith("image/"));
         if (!hasImage) return;
         e.preventDefault();
         e.dataTransfer.dropEffect = "copy";
-        if (!dropTarget) setDropTarget(true);
-    };
-    const handleDragLeave = (e: React.DragEvent) => {
+        setDropTarget(d => d ? d : true);
+    }, []);
+
+    const handleDragLeave = React.useCallback((e: React.DragEvent) => {
         if (e.currentTarget === e.target) setDropTarget(false);
-    };
-    const handleDrop = (e: React.DragEvent) => {
-        if (!active?.replyTarget) return;
+    }, []);
+
+    const handleDrop = React.useCallback((e: React.DragEvent) => {
+        const cur = activeRef.current;
+        if (!cur?.replyTarget) return;
         const fl = e.dataTransfer?.files;
         if (!fl || fl.length === 0) return;
         const imgs = Array.from(fl).filter(f => f.type.startsWith("image/"));
         if (imgs.length === 0) return;
         e.preventDefault();
         setDropTarget(false);
-        pauseDismiss(active.id);
+        pauseDismiss(cur.id);
         setPendingFiles(imgs);
         setReplying(true);
-    };
+    }, []);
 
-    const handleContextMenu = (e: React.MouseEvent) => {
-        if (!active?.userId) return;
+    const handleContextMenu = React.useCallback((e: React.MouseEvent) => {
+        const cur = activeRef.current;
+        if (!cur?.userId) return;
         e.preventDefault();
         e.stopPropagation();
         const rootEl = (e.currentTarget as HTMLElement).closest(".di-root") as HTMLElement | null;
@@ -262,30 +273,42 @@ export function Island() {
             x: e.clientX - (r?.left ?? 0),
             y: e.clientY - (r?.top ?? 0)
         });
-    };
+    }, []);
 
-    const cancelReply = () => {
-        if (!active) return;
+    const cancelReply = React.useCallback(() => {
+        const cur = activeRef.current;
+        if (!cur) return;
         setReplying(false);
-        resumeDismiss(active.id, settings.store.defaultDuration * 1000);
-    };
+        resumeDismiss(cur.id, settings.store.defaultDuration * 1000);
+    }, []);
 
-    const sentReply = () => {
-        if (!active) return;
+    const sentReply = React.useCallback(() => {
+        const cur = activeRef.current;
+        if (!cur) return;
         setReplying(false);
-        dismiss(active.id);
-    };
+        dismiss(cur.id);
+    }, []);
 
-    const ackChannel = () => {
-        if (!active?.channelId) return;
+    const ackChannel = React.useCallback(() => {
+        const cur = activeRef.current;
+        if (!cur?.channelId) return;
         try {
-            const ch = ChannelStore.getChannel(active.channelId);
+            const ch = ChannelStore.getChannel(cur.channelId);
             if (ch) ReadStateUtils.ackChannel(ch);
         } catch (e) {
             logger.error("ack failed", e);
         }
-        dismiss(active.id);
-    };
+        dismiss(cur.id);
+    }, []);
+
+    const handleAuxClick = React.useCallback((ev: React.MouseEvent) => {
+        if (ev.button === 1) ev.preventDefault();
+    }, []);
+
+    const handleDismissActive = React.useCallback(() => {
+        const cur = activeRef.current;
+        if (cur) dismiss(cur.id);
+    }, []);
 
     const buildCtxItems = (e: IslandEvent): CtxItem[] => {
         const items: CtxItem[] = [];
@@ -317,20 +340,26 @@ export function Island() {
         return items;
     };
 
-    const transientProps: TransientHandlers | null = active ? {
+    const transientProps: TransientHandlers | null = React.useMemo(() => active ? {
         all,
         onClick: handleClick,
         onContextMenu: handleContextMenu,
         onMouseDown: handleMouseDown,
-        onAuxClick: ev => { if (ev.button === 1) ev.preventDefault(); },
+        onAuxClick: handleAuxClick,
         onDragOver: handleDragOver,
         onDragLeave: handleDragLeave,
         onDrop: handleDrop,
         dropTarget,
-        onDismiss: () => dismiss(active.id),
+        onDismiss: handleDismissActive,
         onAck: ackChannel,
         onPopoutChange: setShowPopout
-    } : null;
+    } : null, [
+        active,
+        all,
+        dropTarget,
+        handleClick, handleContextMenu, handleMouseDown, handleAuxClick,
+        handleDragOver, handleDragLeave, handleDrop, handleDismissActive, ackChannel
+    ]);
 
     return (
         <div className="di-root" style={cssVars}>

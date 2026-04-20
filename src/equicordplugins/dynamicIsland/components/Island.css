@@ -55,23 +55,18 @@
     box-shadow:
         0 4px 18px rgba(0, 0, 0, 0.5),
         0 0 0 1px rgba(255, 255, 255, 0.05) inset;
-    display: grid;
-    grid-template-rows: auto 0fr;
+    display: flex;
+    flex-direction: column;
     transition:
         width var(--di-dur) var(--di-ease-bounce),
         background var(--di-dur-fast) var(--di-ease),
-        box-shadow var(--di-dur) var(--di-ease),
-        border-radius var(--di-dur) var(--di-ease-bounce),
-        grid-template-rows var(--di-dur) var(--di-ease);
+        border-radius var(--di-dur) var(--di-ease-bounce);
     user-select: none;
-    will-change: width, grid-template-rows;
+    contain: layout paint style;
+    transform: translateZ(0);
 }
 
 .di-surface:hover { background: #1b1b1f; }
-
-.di-surface.di-surface-expanded {
-    grid-template-rows: auto 1fr;
-}
 
 .di-surface.di-surface-idle {
     background: transparent;
@@ -111,12 +106,13 @@
     align-items: center;
     flex: 1 1 auto;
     min-width: 0;
-    will-change: transform, opacity;
+    contain: layout style;
 }
 
 .di-segment-wrap.di-segment-entering {
-    animation: di-seg-in 260ms var(--di-ease-bounce) both;
+    animation: di-seg-in 220ms var(--di-ease-bounce) both;
     animation-delay: 40ms;
+    will-change: transform, opacity;
 }
 
 .di-segment-wrap.di-segment-wrap-left.di-segment-entering {
@@ -128,8 +124,9 @@
 }
 
 .di-segment-wrap.di-segment-leaving {
-    animation: di-seg-out 220ms var(--di-ease) both;
+    animation: di-seg-out 200ms var(--di-ease) both;
     pointer-events: none;
+    will-change: transform, opacity;
 }
 
 @keyframes di-seg-in {
@@ -149,7 +146,7 @@
 
 @keyframes di-seg-out {
     from { opacity: 1; transform: scaleX(1); max-width: 400px; }
-    to { opacity: 0; transform: scaleX(0.7); max-width: 0; }
+    to { opacity: 0; transform: scaleX(0.6); max-width: 0; }
 }
 
 /* === Segments ============================================================= */
@@ -163,6 +160,7 @@
     gap: 4px;
     padding: 0;
     cursor: default;
+    contain: layout style;
 }
 
 .di-seg-compact {
@@ -303,16 +301,19 @@
 
 .di-surface-expand {
     overflow: hidden;
-    min-height: 0;
-    transition: padding var(--di-dur) var(--di-ease);
+    max-height: 0;
+    transition: max-height var(--di-dur) var(--di-ease), border-color var(--di-dur) var(--di-ease);
+    border-top: 1px solid transparent;
+    contain: layout paint;
 }
 
 .di-surface.di-surface-expanded .di-surface-expand {
-    border-top: 1px solid rgba(255, 255, 255, 0.06);
+    max-height: 260px;
+    border-top-color: rgba(255, 255, 255, 0.06);
 }
 
 .di-surface-expand-inner {
-    padding: 0 14px;
+    padding: 10px 14px 12px;
     display: flex;
     flex-direction: column;
     gap: 8px;
@@ -320,12 +321,10 @@
     transform: translateY(-4px);
     transition:
         opacity var(--di-dur-fast) var(--di-ease) 40ms,
-        transform var(--di-dur) var(--di-ease) 40ms,
-        padding var(--di-dur) var(--di-ease);
+        transform var(--di-dur) var(--di-ease) 40ms;
 }
 
 .di-surface.di-surface-expanded .di-surface-expand-inner {
-    padding: 10px 14px 12px;
     opacity: 1;
     transform: translateY(0);
 }
@@ -553,8 +552,10 @@ img.di-icon { background: transparent; }
     width: 3px;
     background: #23a55a;
     border-radius: 2px;
-    height: 20%;
-    transition: height 160ms ease;
+    height: 18px;
+    transform: scaleY(0.25);
+    transform-origin: center;
+    transition: transform 160ms ease;
     opacity: 0.7;
 }
 .di-wave.di-wave-active .di-wave-bar {
@@ -568,8 +569,8 @@ img.di-icon { background: transparent; }
 .di-wave.di-wave-active .di-wave-bar:nth-child(5) { animation-delay: 0.05s; }
 
 @keyframes di-wave-bounce {
-    0%, 100% { height: 25%; }
-    50% { height: 90%; }
+    0%, 100% { transform: scaleY(0.25); }
+    50% { transform: scaleY(1); }
 }
 
 /* === Self avatar (small, used in voice segment) ========================== */
@@ -920,7 +921,7 @@ img.di-icon { background: transparent; }
 }
 .di-reply-send.di-reply-send-ready:hover {
     transform: scale(1.06);
-    filter: brightness(1.12);
+    background: color-mix(in srgb, var(--di-accent, #5865f2) 88%, white 12%);
 }
 
 /* === Context menu ======================================================= */
