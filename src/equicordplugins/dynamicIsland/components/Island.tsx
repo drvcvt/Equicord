@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
+import { isPluginEnabled } from "@api/PluginManager";
 import { Logger } from "@utils/Logger";
 import {
     ChannelStore,
@@ -231,11 +232,68 @@ export function Island() {
     const activeRef = React.useRef(active);
     activeRef.current = active;
 
+    const [dragDelta, setDragDelta] = React.useState<{ x: number; y: number; } | null>(null);
+    const dragStartRef = React.useRef<{ mx: number; my: number; baseX: number; baseY: number; } | null>(null);
+
+    const posSettings = settings.use(["topOffset", "posX"]);
+    const baseTop = posSettings.topOffset;
+    const baseX = posSettings.posX ?? 0;
+    const effTop = dragDelta ? Math.max(0, baseTop + dragDelta.y) : baseTop;
+    const effX = dragDelta ? baseX + dragDelta.x : baseX;
+
     const cssVars = React.useMemo<React.CSSProperties>(() => ({
         // @ts-expect-error css custom props
-        "--di-top": `${settings.store.topOffset}px`,
+        "--di-top": `${effTop}px`,
+        "--di-x": `${effX}px`,
         "--di-accent": active?.accent ?? "#5865f2"
-    }), [active?.accent, settings.store.topOffset]);
+    }), [active?.accent, effTop, effX]);
+
+    const handleRootMouseDown = React.useCallback((e: React.MouseEvent) => {
+        if (e.button !== 0 || !e.altKey) return;
+        e.preventDefault();
+        e.stopPropagation();
+        dragStartRef.current = {
+            mx: e.clientX,
+            my: e.clientY,
+            baseX: settings.store.posX ?? 0,
+            baseY: settings.store.topOffset
+        };
+        setDragDelta({ x: 0, y: 0 });
+    }, []);
+
+    const handleRootDoubleClick = React.useCallback((e: React.MouseEvent) => {
+        if (!e.altKey) return;
+        e.preventDefault();
+        e.stopPropagation();
+        settings.store.posX = 0;
+        settings.store.topOffset = 32;
+    }, []);
+
+    React.useEffect(() => {
+        if (!dragDelta) return;
+        const move = (e: MouseEvent) => {
+            const s = dragStartRef.current;
+            if (!s) return;
+            setDragDelta({ x: e.clientX - s.mx, y: e.clientY - s.my });
+        };
+        const up = (e: MouseEvent) => {
+            const s = dragStartRef.current;
+            if (s) {
+                let nx = Math.round(s.baseX + (e.clientX - s.mx));
+                if (Math.abs(nx) < 20) nx = 0; // snap to center
+                settings.store.posX = nx;
+                settings.store.topOffset = Math.max(0, Math.round(s.baseY + (e.clientY - s.my)));
+            }
+            dragStartRef.current = null;
+            setDragDelta(null);
+        };
+        window.addEventListener("mousemove", move);
+        window.addEventListener("mouseup", up);
+        return () => {
+            window.removeEventListener("mousemove", move);
+            window.removeEventListener("mouseup", up);
+        };
+    }, [!!dragDelta]);
 
     const handleClick = React.useCallback((e: React.MouseEvent) => {
         const cur = activeRef.current;
@@ -359,7 +417,12 @@ export function Island() {
             });
             items.push({ label: "Mark channel as read", onClick: ackChannel });
         }
-        if (e.userId && getTracked()[e.userId]) {
+        // UserStalker integration is soft — only offer its actions if the
+        // plugin is actually installed+enabled AND already tracking this user.
+        const stalkerOn = (() => {
+            try { return isPluginEnabled("UserStalker"); } catch { return false; }
+        })();
+        if (stalkerOn && e.userId && getTracked()[e.userId]) {
             items.push({ label: "Open in Stalker", onClick: () => openStalkerModal(e.userId!) });
             const tr = getTracked()[e.userId];
             const muted = tr?.notify === false;
@@ -416,10 +479,12 @@ export function Island() {
 
     return (
         <div
-            className="di-root"
+            className={"di-root" + (dragDelta ? " di-dragging" : "")}
             style={cssVars}
             onContextMenu={handleRootContextMenu}
-            title="Right-click to open Hub"
+            onMouseDown={handleRootMouseDown}
+            onDoubleClick={handleRootDoubleClick}
+            title="Right-click: Hub · Alt+drag: move · Alt+double-click: reset to center"
         >
             <Surface
                 tracked={tracked}

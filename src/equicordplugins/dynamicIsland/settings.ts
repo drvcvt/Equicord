@@ -10,12 +10,16 @@ import { OptionType } from "@utils/types";
 const settings = definePluginSettings({
     // Layout
     topOffset: {
-        type: OptionType.SLIDER,
-        description: "Distance from top of window (px). Increase if it overlaps your title bar.",
+        type: OptionType.NUMBER,
+        description: "Distance from top of window (px). Increase if it overlaps your title bar. Alt+drag the pill to reposition.",
         default: 32,
-        markers: [0, 12, 24, 32, 48, 64, 96],
-        min: 0,
-        max: 120
+        isValid: (value: number) => Number.isFinite(value) || "Must be a number"
+    },
+    posX: {
+        type: OptionType.NUMBER,
+        description: "Horizontal offset from center (px). Negative = left, positive = right. Alt+drag the pill to reposition.",
+        default: 0,
+        isValid: (value: number) => Number.isFinite(value) || "Must be a number"
     },
     showOnHover: {
         type: OptionType.BOOLEAN,
@@ -31,25 +35,42 @@ const settings = definePluginSettings({
         max: 600
     },
 
-    // Sources — all gated by UserStalker tracked list
+    // Scope — who to surface events for
+    stalkerMode: {
+        type: OptionType.BOOLEAN,
+        description: "Stalker mode: also show voice/stream/message events from tracked users in channels outside your own voice call. Off by default — only your current voice channel surfaces live events (plus DMs and mentions always).",
+        default: false
+    },
+    includeFriends: {
+        type: OptionType.BOOLEAN,
+        description: "Treat your Discord friends as tracked users automatically.",
+        default: true
+    },
+    extraTrackedIds: {
+        type: OptionType.STRING,
+        description: "Additional tracked user IDs (comma or space separated). These are always watched, regardless of friend status or UserStalker.",
+        default: ""
+    },
+
+    // Sources
     notifyMessages: {
         type: OptionType.BOOLEAN,
-        description: "Show when a tracked user sends a message (mentions/DMs are highlighted).",
+        description: "Show when someone sends a message. DMs and @mentions always show; in stalker mode, tracked users' messages anywhere show too.",
         default: true
     },
     notifyVoice: {
         type: OptionType.BOOLEAN,
-        description: "Show when a tracked user joins, leaves, or moves voice channels.",
+        description: "Show when someone joins, leaves, or moves voice channels. Defaults to your own voice channel only; stalker mode expands to tracked users anywhere.",
         default: true
     },
     notifyStream: {
         type: OptionType.BOOLEAN,
-        description: "Show when a tracked user starts streaming/screen sharing.",
+        description: "Show when someone starts streaming/screen sharing. Defaults to your own voice channel only; stalker mode expands to tracked users anywhere.",
         default: true
     },
     notifyOnline: {
         type: OptionType.BOOLEAN,
-        description: "Show when a tracked user comes online.",
+        description: "Show when a tracked user (friend or manually tracked) comes online.",
         default: true
     },
     notifyActivity: {
@@ -60,11 +81,6 @@ const settings = definePluginSettings({
     notifySoundboard: {
         type: OptionType.BOOLEAN,
         description: "Show soundboard plays in your current voice channel (any user).",
-        default: true
-    },
-    notifyVcMembers: {
-        type: OptionType.BOOLEAN,
-        description: "While you're in a voice channel, show events (joins, leaves, streams) for everyone in that channel — not only tracked users.",
         default: true
     },
 

@@ -18,12 +18,12 @@ import {
 } from "@webpack/common";
 import type { Root } from "react-dom/client";
 
-import { isTracked } from "../userStalker/store";
 import islandStyleName from "./components/Island.css?managed";
 import { Island } from "./components/Island";
 import { onSelfVoiceStateUpdate, startLiveActivities, stopLiveActivities } from "./liveActivities";
 import settings from "./settings";
 import { dismiss, dismissByType, getById, onPushEvent, push } from "./store";
+import { isTrackedUser } from "./tracking";
 import { Priority } from "./types";
 
 const GROUP_WINDOW_MS = 10_000;
@@ -103,7 +103,7 @@ function suppressedByFocus(channelId?: string | null): boolean {
     try { return SelectedChannelStore.getChannelId() === channelId; } catch { return false; }
 }
 
-// === Source: tracked user sends a message ===
+// === Source: message (DMs + mentions always; tracked users only in stalker mode) ===
 function handleMessageCreate(payload: any) {
     if (payload.optimistic) return;
     if (isBoot()) return;
@@ -113,20 +113,24 @@ function handleMessageCreate(payload: any) {
     const authorId: string | undefined = msg.author?.id;
     const me = selfId();
     if (!channelId || !authorId || !me || authorId === me) return;
-    if (!isTracked(authorId)) return;
     if (suppressedByFocus(channelId)) return;
 
     const ch = ChannelStore.getChannel(channelId);
+    const isDM = !!(ch && (ch.type === 1 || ch.type === 3));
+    const mentionsMe = (msg.mentions ?? []).some((m: any) => (typeof m === "string" ? m : m?.id) === me)
+        || msg.mention_everyone === true
+        || (msg.referenced_message?.author?.id === me);
+
+    // Gate: DMs always show, @mentions always show, tracked users anywhere
+    // only in stalker mode. Plain server messages from randoms are filtered.
+    const tracked = isTrackedUser(authorId);
+    if (!(isDM || mentionsMe || (settings.store.stalkerMode && tracked))) return;
+
     const author = UserStore.getUser(authorId) ?? msg.author;
     const BODY_LIMIT = 180;
     const raw = (msg.content ?? "").trim();
     const truncated = raw.length > BODY_LIMIT ? raw.slice(0, BODY_LIMIT - 1).trimEnd() + "…" : raw;
     const content: string = truncated || (msg.attachments?.length ? "[attachment]" : "[no text]");
-
-    const mentionsMe = (msg.mentions ?? []).some((m: any) => (typeof m === "string" ? m : m?.id) === me)
-        || msg.mention_everyone === true
-        || (msg.referenced_message?.author?.id === me);
-    const isDM = ch && (ch.type === 1 || ch.type === 3);
 
     // Group consecutive messages from the same user in the same channel within
     // GROUP_WINDOW_MS into a single event — prevents spam-flooding the island.
@@ -171,8 +175,8 @@ function handleVoiceStates(voiceStates: any[]) {
 
     if (!settings.store.notifyVoice && !settings.store.notifyStream) return;
 
-    // My current voice channel — used to opportunistically surface events for
-    // everyone else who's in the same VC, not just tracked users.
+    // My current voice channel — the default scope for voice/stream events.
+    // Stalker mode widens it to tracked users anywhere.
     let myVcId: string | null = null;
     try { myVcId = SelectedChannelStore.getVoiceChannelId?.() ?? null; } catch { /* */ }
 
@@ -183,10 +187,11 @@ function handleVoiceStates(voiceStates: any[]) {
         const newCh: string | null = s.channelId ?? null;
         const prevCh = lastVoiceChannel.get(uid) ?? null;
 
-        // Show this state change if user is tracked OR (notifyVcMembers AND they're
-        // in my voice channel now or were just before this update).
         const inMyVc = !!myVcId && (newCh === myVcId || prevCh === myVcId);
-        if (!isTracked(uid) && !(settings.store.notifyVcMembers && inMyVc)) continue;
+        const tracked = isTrackedUser(uid);
+        // Default: only surface events happening in my own VC. Stalker mode
+        // additionally surfaces tracked users in any VC they're in.
+        if (!inMyVc && !(settings.store.stalkerMode && tracked)) continue;
 
         if (newCh !== prevCh) {
             lastVoiceChannel.set(uid, newCh);
@@ -271,7 +276,7 @@ function handlePresenceUpdates(updates: any[]) {
     for (const u of updates) {
         const uid: string = u.user?.id;
         if (!uid || uid === me) continue;
-        if (!isTracked(uid)) continue;
+        if (!isTrackedUser(uid)) continue;
 
         const status: string = u.status;
         const prev = lastPresence.get(uid);
@@ -358,10 +363,9 @@ declare global {
 
 export default definePlugin({
     name: "DynamicIsland",
-    description: "iOS-style notification pill at the top of Discord. Surfaces messages, voice activity, presence, streams, and soundboard plays — but only for users you track via UserStalker. Right-click (or click the ⋯ next to the idle dot) to open the Hub: Voice calls of friends, recent DMs with previews, and friends online.",
+    description: "iOS-style notification pill at the top of Discord. DMs and @mentions always surface; voice and stream events default to your own voice channel and can be widened to any tracked user via Stalker mode. Right-click (or click the ⋯ next to the idle dot) to open the Hub: friend voice calls, recent DMs with previews, and friends online. Tracked users = friends + your manual list + optionally the UserStalker plugin if installed.",
     authors: [EquicordDevs.Matti],
     settings,
-    dependencies: ["UserStalker"],
 
     start() {
         bootTs = Date.now();
