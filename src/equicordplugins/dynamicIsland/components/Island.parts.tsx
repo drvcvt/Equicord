@@ -54,6 +54,23 @@ export interface SegmentData {
 
 export type TrackedSegment = { data: SegmentData; status: "in" | "out"; };
 
+const TYPE_ORDER: Record<SegmentType, number> = {
+    voice_call: 0,
+    stream: 1,
+    draft: 2,
+    transient: 3,
+    idle: 4
+};
+
+function sortTracked(list: TrackedSegment[]): TrackedSegment[] {
+    return [...list].sort((a, b) => {
+        const ta = TYPE_ORDER[a.data.type];
+        const tb = TYPE_ORDER[b.data.type];
+        if (ta !== tb) return ta - tb;
+        return a.data.id.localeCompare(b.data.id);
+    });
+}
+
 export function computeSegments(live: IslandEvent[], transient: IslandEvent | null): SegmentData[] {
     const out: SegmentData[] = [];
     for (const e of live) {
@@ -105,7 +122,7 @@ export function useIslandState() {
 
 export function useAnimatedSegments(segments: SegmentData[], exitMs = 260): TrackedSegment[] {
     const [list, setList] = React.useState<TrackedSegment[]>(() =>
-        segments.map(s => ({ data: s, status: "in" }))
+        sortTracked(segments.map(s => ({ data: s, status: "in" })))
     );
 
     React.useEffect(() => {
@@ -127,7 +144,7 @@ export function useAnimatedSegments(segments: SegmentData[], exitMs = 260): Trac
             }
             const existing = new Set(next.map(t => t.data.id));
             for (const s of segments) if (!existing.has(s.id)) next.push({ data: s, status: "in" });
-            return next;
+            return sortTracked(next);
         });
     }, [segments.map(s => s.id).join("|")]);
 
