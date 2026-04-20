@@ -98,15 +98,15 @@ export function computeSegments(live: IslandEvent[], transient: IslandEvent | nu
         });
     }
     if (out.length === 0) {
-        out.push({ id: "idle", type: "idle", compactWidth: 44, priority: 0 });
+        out.push({ id: "idle", type: "idle", compactWidth: 72, priority: 0 });
     }
     return out;
 }
 
 export function computeWidth(tracked: TrackedSegment[]): number {
     const active = tracked.filter(s => s.status !== "out");
-    if (active.length === 0) return 44;
-    if (active.length === 1 && active[0].data.type === "idle") return 44;
+    if (active.length === 0) return 72;
+    if (active.length === 1 && active[0].data.type === "idle") return 72;
     const w = active.reduce((acc, s) => acc + s.data.compactWidth, 0);
     const dividers = Math.max(0, active.length - 1);
     return w + dividers + 24;

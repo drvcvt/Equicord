@@ -29,10 +29,10 @@ import {
     useIslandState,
     useLinger
 } from "./Island.parts";
+import { HubPanel } from "./Island.hub";
 import { ReplyPill } from "./Island.reply";
 import {
     DraftSegment,
-    IdlePanel,
     IdleSegment,
     StreamSegment,
     TransientExpandContent,
@@ -62,10 +62,11 @@ function renderSegment(
     t: TrackedSegment,
     transientProps: TransientHandlers | null,
     onMouseEnter: () => void,
-    onIdleClick?: () => void
+    onIdleClick?: () => void,
+    onIdleMore?: () => void
 ): React.ReactNode {
     const d = t.data;
-    if (d.type === "idle") return <IdleSegment onClick={onIdleClick} />;
+    if (d.type === "idle") return <IdleSegment onClick={onIdleClick} onMore={onIdleMore} />;
     if (!d.event) return null;
 
     switch (d.type) {
@@ -104,13 +105,15 @@ function Surface({
     transientProps,
     expandedId,
     onExpandedChange,
-    onIdleClick
+    onIdleClick,
+    onIdleMore
 }: {
     tracked: TrackedSegment[];
     transientProps: TransientHandlers | null;
     expandedId: string | null;
     onExpandedChange: (id: string | null) => void;
     onIdleClick: () => void;
+    onIdleMore: () => void;
 }) {
     const width = computeWidth(tracked);
     const active = tracked.filter(t => t.status !== "out");
@@ -179,7 +182,7 @@ function Surface({
                         <React.Fragment key={t.data.id}>
                             {prevActive && t.status !== "out" && <div className="di-divider" />}
                             <div className={cls} style={wrapStyle}>
-                                {renderSegment(t, transientProps, () => onExpandedChange(t.data.id), onIdleClick)}
+                                {renderSegment(t, transientProps, () => onExpandedChange(t.data.id), onIdleClick, onIdleMore)}
                             </div>
                         </React.Fragment>
                     );
@@ -200,7 +203,7 @@ export function Island() {
     const [replying, setReplying] = React.useState(false);
     const [ctxMenu, setCtxMenu] = React.useState<{ x: number; y: number; } | null>(null);
     const [showPopout, setShowPopout] = React.useState(false);
-    const [showIdlePanel, setShowIdlePanel] = React.useState(false);
+    const [showHub, setShowHub] = React.useState(false);
     const [pendingFiles, setPendingFiles] = React.useState<File[] | null>(null);
     const [dropTarget, setDropTarget] = React.useState(false);
     const lastIdRef = React.useRef<string | null>(null);
@@ -298,6 +301,17 @@ export function Island() {
         });
     }, []);
 
+    // Right-click anywhere on the island root → open Hub, unless we're over a
+    // transient segment that has a per-user context menu of its own.
+    const handleRootContextMenu = React.useCallback((e: React.MouseEvent) => {
+        const target = e.target as HTMLElement;
+        const cur = activeRef.current;
+        if (target.closest(".di-segment-transient") && cur?.userId) return;
+        e.preventDefault();
+        e.stopPropagation();
+        setShowHub(s => !s);
+    }, []);
+
     const cancelReply = React.useCallback(() => {
         const cur = activeRef.current;
         if (!cur) return;
@@ -390,31 +404,35 @@ export function Island() {
     const reply = useLinger(replyVisible, 220);
     const ctxVisible = !!(active && ctxMenu);
     const ctx = useLinger(ctxVisible, 160);
-    const idlePanel = useLinger(showIdlePanel, 200);
+    const hubLinger = useLinger(showHub, 220);
 
-    const toggleIdlePanel = React.useCallback(() => setShowIdlePanel(s => !s), []);
-
-    // Close the idle panel if the island is no longer idle (a segment appeared).
-    const isIdle = segments.length === 1 && segments[0].type === "idle";
-    React.useEffect(() => {
-        if (!isIdle && showIdlePanel) setShowIdlePanel(false);
-    }, [isIdle, showIdlePanel]);
+    // Left-click on the idle dot itself is reserved for a future action. The
+    // small three-dots affordance next to it is what opens the Hub on primary
+    // click — right-click anywhere on the island does the same.
+    const idleClick = React.useCallback(() => { /* reserved */ }, []);
+    const openHub = React.useCallback(() => setShowHub(true), []);
 
     const ctxItems = React.useMemo(() => active ? buildCtxItems(active) : [], [active, buildCtxItems]);
 
     return (
-        <div className="di-root" style={cssVars}>
+        <div
+            className="di-root"
+            style={cssVars}
+            onContextMenu={handleRootContextMenu}
+            title="Right-click to open Hub"
+        >
             <Surface
                 tracked={tracked}
                 transientProps={transientProps}
                 expandedId={expandedId}
                 onExpandedChange={setExpandedId}
-                onIdleClick={toggleIdlePanel}
+                onIdleClick={idleClick}
+                onIdleMore={openHub}
             />
-            {idlePanel.mounted && (
-                <IdlePanel
-                    active={idlePanel.active}
-                    onClose={() => setShowIdlePanel(false)}
+            {hubLinger.mounted && (
+                <HubPanel
+                    active={hubLinger.active}
+                    onClose={() => setShowHub(false)}
                 />
             )}
             {popout.mounted && active && active.userId && (

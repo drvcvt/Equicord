@@ -98,6 +98,35 @@ const settings = definePluginSettings({
         type: OptionType.BOOLEAN,
         description: "Don't show messages if you're already viewing that channel.",
         default: true
+    },
+
+    // Hub (right-click panel with Voice / Messages / Online tabs)
+    hubAccent: {
+        type: OptionType.STRING,
+        description: "Hub accent color (CSS color — hex, rgb, or color name). Controls tab indicator, voice indicator, focus ring, and selection color.",
+        default: "#a892ff"
+    },
+    hubFont: {
+        type: OptionType.STRING,
+        description: "Hub font family override (CSS font-family value). Leave empty to inherit Discord's font.",
+        default: ""
+    },
+    hubDensity: {
+        type: OptionType.SELECT,
+        description: "Hub row density.",
+        options: [
+            { label: "Compact", value: "compact" },
+            { label: "Cozy", value: "cozy", default: true },
+            { label: "Spacious", value: "spacious" }
+        ]
+    },
+    hubWidth: {
+        type: OptionType.SLIDER,
+        description: "Hub width (px).",
+        default: 380,
+        markers: [320, 360, 380, 440, 520],
+        min: 320,
+        max: 560
     }
 });
 

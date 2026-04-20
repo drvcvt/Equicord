@@ -358,7 +358,7 @@ declare global {
 
 export default definePlugin({
     name: "DynamicIsland",
-    description: "iOS-style notification pill at the top of Discord. Surfaces messages, voice activity, presence, streams, and soundboard plays — but only for users you track via UserStalker.",
+    description: "iOS-style notification pill at the top of Discord. Surfaces messages, voice activity, presence, streams, and soundboard plays — but only for users you track via UserStalker. Right-click (or click the ⋯ next to the idle dot) to open the Hub: Voice calls of friends, recent DMs with previews, and friends online.",
     authors: [EquicordDevs.Matti],
     settings,
     dependencies: ["UserStalker"],
