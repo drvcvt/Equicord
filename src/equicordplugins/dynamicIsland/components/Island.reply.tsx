@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
+import { sendMessage } from "@utils/discord";
 import { Logger } from "@utils/Logger";
 import { CloudUploadPlatform } from "@vencord/discord-types/enums";
 import {
@@ -50,10 +51,8 @@ export async function sendReply(target: { channelId: string; messageId: string; 
                 ? MessageActions.getSendMessageOptionsForReply({
                     channel, message, shouldMention: true, showMentionToggle: false
                 })
-                : undefined;
-            MessageActions._sendMessage(target.channelId, {
-                content, tts: false, invalidEmojis: [], validNonShortcutEmojis: []
-            }, replyOptions);
+                : {};
+            await sendMessage(target.channelId, { content }, true, replyOptions);
             return true;
         } catch (e) {
             logger.error("send failed", e);
